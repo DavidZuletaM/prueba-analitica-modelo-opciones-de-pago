@@ -1,4 +1,12 @@
 import pandas as pd
+import numpy as np
+#from sklearn.preprocessing import
+from sklearn.model_selection import train_test_split
+from sklearn.pipeline import Pipeline
+from sklearn.compose import make_column_selector, make_column_transformer
+#from sklearn.metrics import 
+from sklearn.ensemble import RandomForestClassifier, IsolationForest
+from sklearn.impute import KNNImputer, SimpleImputer
 
 # Creación de los Dataframes
 df_trtest = pd.read_csv("data/prueba_op_base_pivot_var_rpta_alt_enmascarado_trtest.csv")
@@ -107,4 +115,41 @@ df_resultado=(
         on="key", 
         how="left"
     )
+)
+
+#Definición de variable respuesta
+y = df_resultado["var_rpta_alt"]
+X = df_resultado.copy()
+
+#Preparación de los conjuntos de datos
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=0)
+
+#Pipeline
+
+n_pipeline = Pipeline(
+    steps=[
+        (
+            "column_transformer",
+            make_column_transformer(
+                (
+                    KNNImputer(n_neighbors=3),
+                    make_column_selector(dtype_include=[np.number]), 
+                ),
+                (
+                    SimpleImputer(strategy="most_frequent"),
+                    make_column_selector(dtype_include=object),
+                ),
+                (
+                    IsolationForest(contamination=0.05),
+                    make_column_selector(dtype_include=[np.number]),
+                ),
+                remainder='passthrough'
+            ),
+        ),
+        (
+            "RFClassifier",
+            RandomForestClassifier(random_state= 0)
+        ),
+    ],
+    verbose=False,
 )

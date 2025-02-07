@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from sklearn.preprocessing import OrdinalEncoder, PolynomialFeatures, FunctionTransformer
+from sklearn.preprocessing import OrdinalEncoder, PolynomialFeatures, FunctionTransformer, RobustScaler
 from sklearn.model_selection import train_test_split, RandomizedSearchCV
 from sklearn.pipeline import Pipeline
 from sklearn.compose import make_column_selector, make_column_transformer
@@ -89,12 +89,19 @@ df1_prob.columns=[
     "lote_moda"
 ]
 
-# Creación del Dataset para entrenar y testear el modelo de Machine Learning
+# Base master customer data
+df1_mcd = df_mcd.sort_values(
+    by=["year", "month", "ingestion_day"],
+    ascending=[False, False, False]
+)
+df2_mcd = df1_mcd.drop_duplicates(subset="nit_enmascarado", keep="first")
+df2_mcd.reset_index(drop=True, inplace=True)
 
+# Creación del Dataset para entrenar y testear el modelo de Machine Learning
 df_resultado=(
     df_trtest
     .merge(
-        df_mcd[["nit_enmascarado","edad_cli","estado_civil","tipo_vivienda","personas_dependientes",
+        df2_mcd[["nit_enmascarado","edad_cli","estado_civil","tipo_vivienda","personas_dependientes",
                    "nivel_academico","ocup", "declarante", "total_ing", "tot_activos", "tot_pasivos", 
                    "f_vinc", "egresos_mes", "tot_patrimonio"]
         ], 
@@ -116,14 +123,24 @@ df_resultado=(
         on="key", 
         how="left"
     )
-)
+).reset_index()
 
-# Definición de variable respuesta
+#Definición de variable respuesta
 y = df_resultado["var_rpta_alt"]
 X = df_resultado.copy()
+X.drop("var_rpta_alt", axis=1, inplace=True)
 
-# Preparación de los conjuntos de datos
+#Preparación de los conjuntos de datos
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=0)
+
+# Función para reemplazar valores infinitos por NaN
+def replace_infinite(X):
+    if isinstance(X, pd.DataFrame):
+        num_cols = X.select_dtypes(include=[np.number]).columns
+        X[num_cols] = X[num_cols].replace([np.inf, -np.inf], np.nan)
+    else:
+        X = np.where(np.isinf(X), np.nan, X)
+    return X
 
 # Función para detección de outliers
 def detect_outliers(X):
@@ -132,24 +149,25 @@ def detect_outliers(X):
     return outliers.reshape(-1, 1)
 
 
-#Pipeline COPIA
+# Pipeline
 
 n_pipeline = Pipeline(
     steps=[
+        ("replace_infinite", FunctionTransformer(replace_infinite)),
         (
             "column_transformer",
             make_column_transformer(
                 (
                     KNNImputer(n_neighbors=3),
-                    make_column_selector(dtype_include=[np.number, "int64", "float64"]),  
+                    make_column_selector(dtype_include=[np.number]), 
                 ),
                 (
                     SimpleImputer(strategy="most_frequent"),
-                    make_column_selector(dtype_include=["object","string"]),   
+                    make_column_selector(dtype_include=object), 
                 ),
                 (
                     FunctionTransformer(detect_outliers),
-                    make_column_selector(dtype_include=[np.number, "int64", "float64"]),   
+                    make_column_selector(dtype_include=[np.number]),   
                 ),
                 (
                     OrdinalEncoder(categories="auto",
@@ -157,11 +175,15 @@ n_pipeline = Pipeline(
                                    handle_unknown="use_encoded_value",
                                    unknown_value=-1
                     ),
-                    make_column_selector(dtype_include=["object","string"]),  
+                    make_column_selector(dtype_include=object), 
                 ),
                 (
                     PolynomialFeatures(interaction_only=True, include_bias=False),
-                    make_column_selector(dtype_include=[np.number,"int64", "float64"]),    
+                    make_column_selector(dtype_include=[np.number]),    
+                ),
+                (
+                    RobustScaler(),
+                    make_column_selector(dtype_include=[np.number]),    
                 ),
                 remainder='passthrough',
             ),
@@ -171,17 +193,12 @@ n_pipeline = Pipeline(
             SelectFromModel(RandomForestClassifier(n_estimators=100, random_state=0)),
         ),
         (
-            "final_imputer",
-            SimpleImputer(strategy="most_frequent"),
-        ),
-        (
             "RFClassifier",
             RandomForestClassifier(random_state= 0),
         ),
     ],
     verbose=False,
-)       
-
+)
 
 # Creación de grilla de hiperparámetros
 param_grid = {

@@ -1,12 +1,12 @@
 import pandas as pd
 import numpy as np
-from sklearn.preprocessing import OrdinalEncoder, PolynomialFeatures
-from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import OrdinalEncoder, PolynomialFeatures, FunctionTransformer
+from sklearn.model_selection import train_test_split, RandomizedSearchCV
 from sklearn.pipeline import Pipeline
 from sklearn.compose import make_column_selector, make_column_transformer
-#from sklearn.metrics import 
+from sklearn import metrics
 from sklearn.ensemble import RandomForestClassifier, IsolationForest
-from sklearn.impute import KNNImputer, SimpleImputer
+from sklearn.impute import SimpleImputer, KNNImputer
 from sklearn.feature_selection import SelectFromModel
 
 # Creación de los Dataframes
@@ -70,7 +70,7 @@ df2_hist_pagos.columns = [
     "tipo_ajuste_rediferidos"
 ]
 
-#Base resultados modelos analíticos para cobranza
+# Base resultados modelos analíticos para cobranza
 
 df1_prob=(
     df_prob.groupby("key").agg({
@@ -89,7 +89,7 @@ df1_prob.columns=[
     "lote_moda"
 ]
 
-#Creación del Dataset para entrenar y testear el modelo de Machine Learning
+# Creación del Dataset para entrenar y testear el modelo de Machine Learning
 
 df_resultado=(
     df_trtest
@@ -118,14 +118,21 @@ df_resultado=(
     )
 )
 
-#Definición de variable respuesta
+# Definición de variable respuesta
 y = df_resultado["var_rpta_alt"]
 X = df_resultado.copy()
 
-#Preparación de los conjuntos de datos
+# Preparación de los conjuntos de datos
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=0)
 
-#Pipeline
+# Función para detección de outliers
+def detect_outliers(X):
+    iso = IsolationForest(contamination=0.05, random_state=0)
+    outliers = iso.fit_predict(X)
+    return outliers.reshape(-1, 1)
+
+
+#Pipeline COPIA
 
 n_pipeline = Pipeline(
     steps=[
@@ -134,15 +141,15 @@ n_pipeline = Pipeline(
             make_column_transformer(
                 (
                     KNNImputer(n_neighbors=3),
-                    make_column_selector(dtype_include=[np.number]), 
+                    make_column_selector(dtype_include=[np.number, "int64", "float64"]),  
                 ),
                 (
                     SimpleImputer(strategy="most_frequent"),
-                    make_column_selector(dtype_include=object),
+                    make_column_selector(dtype_include=["object","string"]),   
                 ),
                 (
-                    IsolationForest(contamination=0.05),
-                    make_column_selector(dtype_include=[np.number]),
+                    FunctionTransformer(detect_outliers),
+                    make_column_selector(dtype_include=[np.number, "int64", "float64"]),   
                 ),
                 (
                     OrdinalEncoder(categories="auto",
@@ -150,13 +157,13 @@ n_pipeline = Pipeline(
                                    handle_unknown="use_encoded_value",
                                    unknown_value=-1
                     ),
-                    make_column_selector(dtype_include=object), 
+                    make_column_selector(dtype_include=["object","string"]),  
                 ),
                 (
                     PolynomialFeatures(interaction_only=True, include_bias=False),
-                    make_column_selector(dtype_include=[np.number]),
+                    make_column_selector(dtype_include=[np.number,"int64", "float64"]),    
                 ),
-                remainder='passthrough'
+                remainder='passthrough',
             ),
         ),
         (
@@ -164,9 +171,40 @@ n_pipeline = Pipeline(
             SelectFromModel(RandomForestClassifier(n_estimators=100, random_state=0)),
         ),
         (
+            "final_imputer",
+            SimpleImputer(strategy="most_frequent"),
+        ),
+        (
             "RFClassifier",
             RandomForestClassifier(random_state= 0),
         ),
     ],
     verbose=False,
+)       
+
+
+# Creación de grilla de hiperparámetros
+param_grid = {
+    'RFClassifier__n_estimators':np.arange(10,50,10),
+    'RFClassifier__criterion':['gini','entropy','log_loss'],
+    'RFClassifier__max_depth': [3,5,10]    
+}
+
+# Busqueda de los hiperparámetros
+RF_randomSearch = RandomizedSearchCV(
+    n_pipeline,
+    param_grid
 )
+
+# Entrenamiento del modelo
+RF_randomSearch.fit(X_train,y_train)
+
+# Generar resultados de predicciones
+y_pred = RF_randomSearch.best_estimator_.predict(X_test)
+
+
+# Cálculo de Métricas
+print(f"Accuracy: {metrics.accuracy_score(y_test,y_pred)}")
+print(f"Precission: {metrics.precision_score(y_test,y_pred)}")
+print(f"Recall: {metrics.recall_score(y_test,y_pred)}")
+print(f"F1: {metrics.f1_score(y_test,y_pred)}")

@@ -1,12 +1,13 @@
 import pandas as pd
 import numpy as np
-#from sklearn.preprocessing import
+from sklearn.preprocessing import OrdinalEncoder, PolynomialFeatures
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.compose import make_column_selector, make_column_transformer
 #from sklearn.metrics import 
 from sklearn.ensemble import RandomForestClassifier, IsolationForest
 from sklearn.impute import KNNImputer, SimpleImputer
+from sklearn.feature_selection import SelectFromModel
 
 # Creación de los Dataframes
 df_trtest = pd.read_csv("data/prueba_op_base_pivot_var_rpta_alt_enmascarado_trtest.csv")
@@ -143,12 +144,28 @@ n_pipeline = Pipeline(
                     IsolationForest(contamination=0.05),
                     make_column_selector(dtype_include=[np.number]),
                 ),
+                (
+                    OrdinalEncoder(categories="auto",
+                                   dtype=np.float64, 
+                                   handle_unknown="use_encoded_value",
+                                   unknown_value=-1
+                    ),
+                    make_column_selector(dtype_include=object), 
+                ),
+                (
+                    PolynomialFeatures(interaction_only=True, include_bias=False),
+                    make_column_selector(dtype_include=[np.number]),
+                ),
                 remainder='passthrough'
             ),
         ),
         (
+            "feature_selection",
+            SelectFromModel(RandomForestClassifier(n_estimators=100, random_state=0)),
+        ),
+        (
             "RFClassifier",
-            RandomForestClassifier(random_state= 0)
+            RandomForestClassifier(random_state= 0),
         ),
     ],
     verbose=False,

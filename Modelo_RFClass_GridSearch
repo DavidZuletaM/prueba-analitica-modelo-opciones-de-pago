@@ -190,7 +190,7 @@ n_pipeline = Pipeline(
         ),
         (
             "feature_selection",
-            SelectFromModel(RandomForestClassifier(n_estimators=100, random_state=0, n_jobs=2)),
+            SelectFromModel(RandomForestClassifier(n_estimators=100, random_state=0, n_jobs=3)),
         ),
         (
             "RFClassifier",
@@ -213,8 +213,7 @@ RF_gridSearch = GridSearchCV(
     n_pipeline,
     param_grid,
     cv=2,
-    n_jobs=2,
-    verbose=2
+    n_jobs=3
 )
 
 # Entrenamiento del modelo

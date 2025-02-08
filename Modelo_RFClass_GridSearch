@@ -1,7 +1,7 @@
-mport pandas as pd
+import pandas as pd
 import numpy as np
 from sklearn.preprocessing import OrdinalEncoder, PolynomialFeatures, FunctionTransformer, RobustScaler
-from sklearn.model_selection import train_test_split, RandomizedSearchCV
+from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.pipeline import Pipeline
 from sklearn.compose import make_column_selector, make_column_transformer
 from sklearn import metrics
@@ -202,22 +202,26 @@ n_pipeline = Pipeline(
 
 # Creación de grilla de hiperparámetros
 param_grid = {
-    'RFClassifier__n_estimators':np.arange(10,50,10),
-    'RFClassifier__criterion':['gini','entropy','log_loss'],
-    'RFClassifier__max_depth': [3,5,10]    
+    'RFClassifier__n_estimators':np.arange(50,100,150),
+    'min_samples_leaf': [1,2],
+    'min_samples_split':[2,5],
+    'RFClassifier__max_depth': [5,10,15]    
 }
 
 # Busqueda de los hiperparámetros
-RF_randomSearch = RandomizedSearchCV(
+RF_gridSearch = GridSearchCV(
     n_pipeline,
-    param_grid
+    param_grid,
+    cv=3,
+    n_jobs=-1,
+    verbose=2
 )
 
 # Entrenamiento del modelo
-RF_randomSearch.fit(X_train,y_train)
+RF_gridSearch.fit(X_train,y_train)
 
 # Generar resultados de predicciones
-y_pred = RF_randomSearch.best_estimator_.predict(X_test)
+y_pred = RF_gridSearch.best_estimator_.predict(X_test)
 
 
 # Cálculo de Métricas
